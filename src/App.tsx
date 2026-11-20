@@ -2,6 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { lazy, Suspense } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { db } from './data/db'
+import { loginAtivo, useSessao } from './data/supabase'
+import { Entrar, NovaSenha } from './paginas/Entrar'
 import { Casa } from './paginas/Casa'
 import { CriarCasa } from './paginas/CriarCasa'
 import { Inicio } from './paginas/Inicio'
@@ -14,6 +16,26 @@ import { TabBar } from './ui/componentes'
 const Carrinho = lazy(() => import('./paginas/Carrinho').then((m) => ({ default: m.Carrinho })))
 
 export default function App() {
+  const login = useSessao()
+  if (login.carregando) return null
+  if (loginAtivo && !login.sessao) {
+    return (
+      <main className="app sem-tab">
+        <Entrar />
+      </main>
+    )
+  }
+  if (login.recuperandoSenha) {
+    return (
+      <main className="app sem-tab">
+        <NovaSenha aoConcluir={login.concluirRecuperacao} />
+      </main>
+    )
+  }
+  return <AppDaCasa />
+}
+
+function AppDaCasa() {
   // undefined = ainda carregando; null = casa não criada.
   const casa = useLiveQuery(async () => (await db.casa.get('casa')) ?? null)
   if (casa === undefined) return null
