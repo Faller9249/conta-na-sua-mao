@@ -26,6 +26,9 @@ export const CATEGORIAS_PRODUTO = [
 ] as const
 export type CategoriaProduto = (typeof CATEGORIAS_PRODUTO)[number]
 
+export const TIPOS_CARTAO = ['Crédito', 'Débito', 'Pix / conta', 'Dinheiro', 'Vale-alimentação'] as const
+export type TipoCartao = (typeof TIPOS_CARTAO)[number]
+
 export interface Casa {
   id: 'casa'
   nome: string
@@ -33,6 +36,8 @@ export interface Casa {
   reservaPct: number
   /** Limite mensal por categoria, em centavos. Categoria sem limite fica de fora. */
   limites: Partial<Record<CategoriaFinanceira, number>>
+  /** Lista de compras aberta na tela Lista. */
+  listaAtivaId?: number
   criadaEm: string
 }
 
@@ -43,6 +48,19 @@ export interface Pessoa {
   entradaMensal: number
   /** Dias do mês em que a entrada cai (ex.: [6, 20]). */
   diasPagamento: number[]
+}
+
+/**
+ * Cartão ou forma de pagamento. Guardamos só um apelido (ex.: "Inter crédito"),
+ * nunca o número do cartão.
+ */
+export interface Cartao {
+  id?: number
+  nome: string
+  tipo: TipoCartao
+  pessoaId?: number
+  /** 0 = removido (some das opções, mas continua no histórico). */
+  ativo: 0 | 1
 }
 
 export interface Produto {
@@ -73,9 +91,19 @@ export interface Preco {
   origem: OrigemPreco
 }
 
-export interface ItemLista {
+/** Lista de compras com nome (ex.: "Compras da semana", "Churrasco de sábado"). */
+export interface ListaCompras {
   id?: number
   nome: string
+  criadaEm: string
+}
+
+export interface ItemLista {
+  id?: number
+  listaId: number
+  nome: string
+  /** Marca preferida (opcional). */
+  marca?: string
   produtoId?: string
   quantidade: number
   categoria: CategoriaProduto
@@ -84,14 +112,32 @@ export interface ItemLista {
   criadoEm: string
 }
 
+/** Nota fiscal do consumidor (NFC-e) lida pelo QR Code, depois da compra. */
+export interface NotaFiscal {
+  /** Chave de acesso de 44 dígitos. */
+  chave: string
+  /** Link de consulta da SEFAZ, quando veio do QR Code. */
+  url?: string
+  /** CNPJ do mercado (tirado da chave). */
+  cnpj: string
+  /** Mês de emissão AAAA-MM (tirado da chave). */
+  emissao: string
+  lidaEm: string
+}
+
 export interface Compra {
   id?: number
   mercadoId: number
+  listaId?: number
+  /** Nome da lista no momento da compra (fica no histórico mesmo se a lista for apagada). */
+  nomeLista?: string
+  cartaoId?: number
   inicio: string
   fim?: string
   status: 'aberta' | 'finalizada'
   /** Orçamento definido ao iniciar a compra, em centavos. */
   orcamento: number
+  nota?: NotaFiscal
 }
 
 export interface ItemCompra {
@@ -99,6 +145,7 @@ export interface ItemCompra {
   compraId: number
   produtoId: string
   nome: string
+  marca?: string
   quantidade: number
   /** Preço unitário em centavos. */
   valorUnit: number
@@ -118,6 +165,7 @@ export interface Lancamento {
   origem: 'compra' | 'manual'
   compraId?: number
   pessoaId?: number
+  cartaoId?: number
 }
 
 export interface MovReserva {

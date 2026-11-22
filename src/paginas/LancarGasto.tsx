@@ -1,8 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { db } from '../data/db'
-import { lancarGasto } from '../data/repo'
+import { cartoesAtivos, lancarGasto } from '../data/repo'
 import { hojeISO, lerValor } from '../domain/regras'
 import { CATEGORIAS_FINANCEIRAS, type CategoriaFinanceira } from '../domain/tipos'
 import { Cabecalho } from '../ui/componentes'
@@ -10,6 +10,8 @@ import { Cabecalho } from '../ui/componentes'
 export function LancarGasto() {
   const navegar = useNavigate()
   const pessoas = useLiveQuery(() => db.pessoas.toArray()) ?? []
+  const cartoes = useLiveQuery(() => cartoesAtivos(db)) ?? []
+  const [cartaoId, setCartaoId] = useState<number | undefined>()
   const [valor, setValor] = useState('')
   const [categoria, setCategoria] = useState<CategoriaFinanceira>('Delivery')
   const [descricao, setDescricao] = useState('')
@@ -20,7 +22,7 @@ export function LancarGasto() {
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     if (!centavos) return
-    await lancarGasto(db, { valor: centavos, categoria, descricao, data, pessoaId: pessoaId || undefined })
+    await lancarGasto(db, { valor: centavos, categoria, descricao, data, pessoaId: pessoaId || undefined, cartaoId })
     navegar('/')
   }
 
@@ -60,6 +62,16 @@ export function LancarGasto() {
             ))}
           </select>
         </label>
+      </div>
+      <div className="campo">
+        Pago com
+        <div className="chips">
+          {cartoes.map((c) => (
+            <button type="button" key={c.id} className={`chip${cartaoId === c.id ? ' ativo' : ''}`} onClick={() => setCartaoId(c.id)}>{c.nome}</button>
+          ))}
+          <button type="button" className={`chip${cartaoId === undefined ? ' ativo' : ''}`} onClick={() => setCartaoId(undefined)}>Não informar</button>
+        </div>
+        <Link to="/cartoes" className="botao texto" style={{ textDecoration: 'none', alignSelf: 'flex-start', fontSize: 14 }}>+ Cadastrar cartão</Link>
       </div>
       <button className="botao" type="submit" disabled={!centavos}>Salvar gasto</button>
     </form>

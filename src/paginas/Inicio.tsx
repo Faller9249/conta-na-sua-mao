@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
-import { brl, diasAteProximaEntrada, hojeISO, mesDe, metaReserva, resumoDoMes, separadoNoMes } from '../domain/regras'
+import { brl, diasAteProximaEntrada, gastoPorCartao, hojeISO, mesDe, metaReserva, resumoDoMes, separadoNoMes } from '../domain/regras'
 import { Barra, Cabecalho, corDoUso } from '../ui/componentes'
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -12,9 +12,10 @@ export function Inicio() {
     pessoas: await db.pessoas.toArray(),
     lancamentos: await db.lancamentos.toArray(),
     reservas: await db.reservas.toArray(),
+    cartoes: await db.cartoes.toArray(),
   }))
   if (!dados?.casa) return null
-  const { casa, pessoas, lancamentos, reservas } = dados
+  const { casa, pessoas, lancamentos, reservas, cartoes } = dados
   const hoje = new Date()
   const mes = mesDe(hojeISO(hoje))
   const r = resumoDoMes(mes, lancamentos, pessoas, casa.limites)
@@ -22,6 +23,9 @@ export function Inicio() {
   const meta = metaReserva(r.entradas, casa.reservaPct)
   const separado = separadoNoMes(reservas, mes)
   const nomes = pessoas.map((p) => p.nome).join(' e ')
+  const porCartao = [...gastoPorCartao(lancamentos, mes).entries()]
+    .map(([k, v]) => ({ nome: k === 'sem' ? 'Não informado' : (cartoes.find((c) => c.id === k)?.nome ?? 'Cartão removido'), valor: v }))
+    .sort((a, b) => b.valor - a.valor)
   const diasRestantes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate() - hoje.getDate()
 
   return (
@@ -74,7 +78,23 @@ export function Inicio() {
         ))}
       </section>
 
+      {cartoes.length > 0 && porCartao.length > 0 && (
+        <section className="cartao" style={{ gap: 8 }}>
+          <h2>Por cartão</h2>
+          {porCartao.map((c) => (
+            <div key={c.nome} className="linha entre">
+              <span style={{ fontSize: 14 }}>{c.nome}</span>
+              <span className="pequeno">{brl(c.valor)}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
       <Link to="/lista" className="botao" style={{ textAlign: 'center', textDecoration: 'none' }}>Começar lista de compras</Link>
+      <div className="linha entre">
+        <Link to="/historico" className="botao texto" style={{ textDecoration: 'none' }}>Histórico de compras</Link>
+        <Link to="/cartoes" className="botao texto" style={{ textDecoration: 'none' }}>Cartões</Link>
+      </div>
     </div>
   )
 }

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   brl,
   diasAteProximaEntrada,
+  dvChaveNFe,
+  formatarCNPJ,
+  gastoPorCartao,
+  lerNotaFiscal,
   eanValido,
   lerEtiquetaBalanca,
   lerValor,
@@ -104,5 +108,39 @@ describe('painel do mês', () => {
     expect(diasAteProximaEntrada(pessoas, new Date(2026, 10, 14))).toBe(6)
     expect(diasAteProximaEntrada(pessoas, new Date(2026, 10, 20))).toBe(0)
     expect(diasAteProximaEntrada(pessoas, new Date(2026, 10, 25))).toBe(11)
+  })
+})
+
+describe('nota fiscal', () => {
+  // Chave de teste: UF 43 (RS), 2611, CNPJ 12345678000190, modelo 65.
+  const base = '4326111234567800019065001000012345112345678'
+  const chave = base + dvChaveNFe(base)
+
+  it('aceita a chave de 44 dígitos e tira CNPJ e mês', () => {
+    expect(lerNotaFiscal(chave)).toMatchObject({ chave, cnpj: '12345678000190', emissao: '2026-11', modelo: '65' })
+  })
+  it('lê o link do QR Code da SEFAZ', () => {
+    const url = `https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?p=${chave}|2|1|1|ABCDEF`
+    expect(lerNotaFiscal(url)).toMatchObject({ chave, url })
+  })
+  it('recusa chave com dígito errado ou texto qualquer', () => {
+    expect(lerNotaFiscal(base + ((dvChaveNFe(base) + 1) % 10))).toBeNull()
+    expect(lerNotaFiscal('7891000100103')).toBeNull()
+    expect(lerNotaFiscal('https://exemplo.com')).toBeNull()
+  })
+  it('formata o CNPJ', () => expect(formatarCNPJ('12345678000190')).toBe('12.345.678/0001-90'))
+})
+
+describe('gasto por cartão', () => {
+  it('soma o mês por cartão e separa o que não tem cartão', () => {
+    const l: Lancamento[] = [
+      { data: '2026-11-03', valor: 1000, categoria: 'Mercado', descricao: '', origem: 'compra', cartaoId: 1 },
+      { data: '2026-11-05', valor: 500, categoria: 'Mercado', descricao: '', origem: 'compra', cartaoId: 1 },
+      { data: '2026-11-06', valor: 300, categoria: 'Delivery', descricao: '', origem: 'manual' },
+      { data: '2026-10-06', valor: 999, categoria: 'Delivery', descricao: '', origem: 'manual', cartaoId: 1 },
+    ]
+    const g = gastoPorCartao(l, '2026-11')
+    expect(g.get(1)).toBe(1500)
+    expect(g.get('sem')).toBe(300)
   })
 })

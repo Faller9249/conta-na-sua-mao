@@ -4,7 +4,9 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { db } from './data/db'
 import { loginAtivo, useSessao } from './data/supabase'
 import { Entrar, NovaSenha } from './paginas/Entrar'
+import { Cartoes } from './paginas/Cartoes'
 import { Casa } from './paginas/Casa'
+import { Historico } from './paginas/Historico'
 import { CriarCasa } from './paginas/CriarCasa'
 import { Inicio } from './paginas/Inicio'
 import { LancarGasto } from './paginas/LancarGasto'
@@ -14,6 +16,7 @@ import { TabBar } from './ui/componentes'
 
 // O leitor de código de barras é pesado: só carrega ao abrir o Carrinho.
 const Carrinho = lazy(() => import('./paginas/Carrinho').then((m) => ({ default: m.Carrinho })))
+const DetalheCompra = lazy(() => import('./paginas/DetalheCompra').then((m) => ({ default: m.DetalheCompra })))
 
 export default function App() {
   const login = useSessao()
@@ -62,6 +65,9 @@ function AppDaCasa() {
           <Route path="/casa" element={<Casa />} />
           <Route path="/metas" element={<Metas />} />
           <Route path="/lancar" element={<LancarGasto />} />
+          <Route path="/cartoes" element={<Cartoes />} />
+          <Route path="/historico" element={<Historico />} />
+          <Route path="/historico/:id" element={<Suspense fallback={<p className="vazio">Abrindo…</p>}><DetalheCompra /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <TabBar />

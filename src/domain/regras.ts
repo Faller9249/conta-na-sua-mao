@@ -36,6 +36,11 @@ export function hojeISO(agora = new Date()): string {
   return `${y}-${m}-${d}`
 }
 
+/** 2026-11-20 → 20/11/2026 */
+export function dataBR(iso?: string): string {
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : ''
+}
+
 export function mesDe(dataISO: string): string {
   return dataISO.slice(0, 7)
 }
@@ -198,4 +203,75 @@ export function metaReserva(entradas: number, pct: number): number {
 
 export function separadoNoMes(movs: MovReserva[], mes: string): number {
   return movs.filter((m) => m.mes === mes).reduce((s, m) => s + m.valor, 0)
+}
+
+// ---------- Nota fiscal (NFC-e) ----------
+
+/** Dígito verificador da chave de acesso (módulo 11, pesos 2 a 9 da direita para a esquerda). */
+export function dvChaveNFe(chave43: string): number {
+  let soma = 0
+  let peso = 2
+  for (let i = chave43.length - 1; i >= 0; i--) {
+    soma += Number(chave43[i]) * peso
+    peso = peso === 9 ? 2 : peso + 1
+  }
+  const resto = soma % 11
+  return resto < 2 ? 0 : 11 - resto
+}
+
+export interface LeituraNota {
+  chave: string
+  url?: string
+  cnpj: string
+  /** AAAA-MM */
+  emissao: string
+  /** 65 = NFC-e (cupom do consumidor), 55 = NF-e. */
+  modelo: string
+}
+
+/**
+ * Lê o QR Code da nota (link da SEFAZ com ?p=CHAVE|...) ou a chave de 44 dígitos digitada.
+ * Retorna null se não houver uma chave válida.
+ */
+export function lerNotaFiscal(texto: string): LeituraNota | null {
+  const t = texto.trim()
+  let url: string | undefined
+  let candidato = t.replace(/\s/g, '')
+  if (/^https?:\/\//i.test(t)) {
+    url = t
+    try {
+      const p = new URL(t).searchParams.get('p') ?? new URL(t).searchParams.get('chNFe') ?? ''
+      candidato = p.split('|')[0]
+    } catch {
+      return null
+    }
+    if (!/^\d{44}$/.test(candidato)) candidato = (t.match(/\d{44}/) ?? [''])[0]
+  }
+  if (!/^\d{44}$/.test(candidato)) return null
+  if (dvChaveNFe(candidato.slice(0, 43)) !== Number(candidato[43])) return null
+  return {
+    chave: candidato,
+    url,
+    cnpj: candidato.slice(6, 20),
+    emissao: `20${candidato.slice(2, 4)}-${candidato.slice(4, 6)}`,
+    modelo: candidato.slice(20, 22),
+  }
+}
+
+/** 12345678000190 → 12.345.678/0001-90 */
+export function formatarCNPJ(cnpj: string): string {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+}
+
+// ---------- Cartões ----------
+
+/** Gasto do mês por cartão (id); lançamentos sem cartão ficam em "sem". */
+export function gastoPorCartao(lancamentos: Lancamento[], mes: string): Map<number | 'sem', number> {
+  const m = new Map<number | 'sem', number>()
+  for (const l of lancamentos) {
+    if (mesDe(l.data) !== mes) continue
+    const k = l.cartaoId ?? 'sem'
+    m.set(k, (m.get(k) ?? 0) + l.valor)
+  }
+  return m
 }
