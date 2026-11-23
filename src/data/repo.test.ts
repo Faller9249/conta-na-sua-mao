@@ -1,10 +1,11 @@
 import 'fake-indexeddb/auto'
 import Dexie from 'dexie'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { dvChaveNFe, lerNotaFiscal, precoSugerido } from '../domain/regras'
+import { dvChaveNFe, hojeISO, lerNotaFiscal, precoSugerido } from '../domain/regras'
 import { BancoCasa } from './db'
 import {
   adicionarNaLista,
+  aplicarConferencia,
   apagarLista,
   cancelarCompra,
   colocarNoCarrinho,
@@ -15,6 +16,7 @@ import {
   iniciarCompra,
   listaAtiva,
   salvarCartao,
+  salvarNotaLida,
   trocarCartaoDaCompra,
   vincularNota,
 } from './repo'
@@ -164,5 +166,29 @@ describe('código × nome (Fase 2)', () => {
     const leite = await garantirProduto(banco, { ean: '7891000000001', nome: 'Leite integral', categoria: 'Laticínios' })
     await colocarNoCarrinho(banco, compraId, leite, 500, 1, 'digitado', 'extra')
     expect((await banco.lista.toArray())[0].pego).toBe(0)
+  })
+})
+
+describe('conferência pela nota (Fase 2)', () => {
+  it('aplica preços da nota, inclui esquecidos, aprende o código e acerta o gasto', async () => {
+    const compraId = await iniciarCompra(banco, 'Rissul', 0)
+    const arroz = await garantirProduto(banco, { ean: '7896006716112', nome: 'Arroz Tio João 5 kg', categoria: 'Grãos e massas' })
+    await colocarNoCarrinho(banco, compraId, arroz, 2799)
+    await finalizarCompra(banco, compraId, { agora: new Date(2026, 10, 20) })
+    await salvarNotaLida(banco, compraId, {
+      emitente: 'RISSUL', cnpj: '12345678000195', total: 3462,
+      itens: [
+        { codigo: '1001', descricao: 'ARROZ TIO JOAO T1 5kg', quantidade: 1, unidade: 'UN', valorUnit: 2899, valorTotal: 2899 },
+        { codigo: '1005', descricao: 'DETERG YPE NEUTRO 500ml', quantidade: 1, unidade: 'UN', valorUnit: 563, valorTotal: 563 },
+      ],
+    })
+    const total = await aplicarConferencia(banco, compraId)
+    expect(total).toBe(3462)
+    expect((await banco.lancamentos.toArray())[0].valor).toBe(3462)
+    expect((await banco.produtos.get(arroz.id))?.codigosNota).toEqual(['12345678000195:1001'])
+    expect(precoSugerido(await banco.precos.toArray(), arroz.id, 1)?.valor).toBe(2899)
+    const itens = await banco.itensCompra.toArray()
+    expect(itens.map((i) => [i.nome, i.origemPreco])).toEqual([['Arroz Tio João 5 kg', 'nota'], ['DETERG YPE NEUTRO 500ml', 'nota']])
+    expect((await banco.compras.get(compraId))?.conferencia?.aplicadaEm).toBe(hojeISO())
   })
 })

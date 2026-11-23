@@ -281,6 +281,7 @@ export function gastoPorCartao(lancamentos: Lancamento[], mes: string): Map<numb
 /** Código para mostrar ao casal: o EAN, "balança 1234" ou null (item entrou pelo nome). */
 export function codigoDoProduto(produtoId: string): string | null {
   if (produtoId.startsWith('nome:')) return null
+  if (produtoId.startsWith('loja:')) return `código do mercado ${produtoId.split(':')[2] ?? ''}`.trim()
   if (produtoId.startsWith('balanca:')) return `balança ${produtoId.split(':')[2] ?? ''}`.trim()
   return produtoId
 }
@@ -414,5 +415,5 @@ export function sugerirParaLista(
   return sugestoes
     .sort((a, b) => b.urgencia - a.urgencia || b.vezes - a.vezes)
     .slice(0, limite)
-    .map(({ urgencia, ...s }) => (void urgencia, s))
+    .map(({ urgencia: _urgencia, ...s }) => s)
 }

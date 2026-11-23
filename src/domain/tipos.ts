@@ -71,6 +71,8 @@ export interface Produto {
   marca?: string
   quantidade?: string
   categoria: CategoriaProduto
+  /** Códigos internos do mercado já ligados a este produto pela nota ("CNPJ:código"). */
+  codigosNota?: string[]
 }
 
 export interface Mercado {
@@ -138,6 +140,29 @@ export interface Compra {
   /** Orçamento definido ao iniciar a compra, em centavos. */
   orcamento: number
   nota?: NotaFiscal
+  /** Itens lidos da nota na SEFAZ, para conferir com o carrinho. */
+  conferencia?: ConferenciaNota
+}
+
+export interface ItemNotaSalvo {
+  codigo: string
+  descricao: string
+  quantidade: number
+  unidade: string
+  valorUnit: number
+  valorTotal: number
+}
+
+export interface ConferenciaNota {
+  emitente: string
+  cnpj: string
+  total: number
+  pagamento?: string
+  emissao?: string
+  itens: ItemNotaSalvo[]
+  lidaEm: string
+  /** Data em que os valores da nota foram aplicados à compra. */
+  aplicadaEm?: string
 }
 
 export interface ItemCompra {

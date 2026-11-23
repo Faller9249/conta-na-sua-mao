@@ -57,3 +57,20 @@ VITE_SUPABASE_ANON_KEY=...
 ```
 
 A chave anon/publishable é pública por natureza. Nunca coloque no app a chave **service_role / secret**.
+
+## Conferência pela nota fiscal (NFC-e)
+
+O QR Code do cupom traz o link da consulta na SEFAZ (no RS, `dfe-portal.svrs.rs.gov.br`). O app:
+
+- mostra a nota **dentro do app** ("Ver a nota aqui"), sem abrir o navegador;
+- lê os itens da nota e cruza com o carrinho: esquecidos, não cobrados, preço e quantidade diferentes. "Usar os valores da nota" corrige a compra, grava os preços como `nota` e aprende o código interno do mercado para as próximas conferências.
+
+O navegador não pode ler a página da SEFAZ direto (ela não libera CORS), então a leitura dos itens passa pela função `supabase/functions/nota-sefaz`. Ela só aceita chaves de NFC-e e só consulta o portal da SVRS. Para ligar:
+
+```bash
+npx supabase login
+npx supabase link --project-ref <id-do-projeto>
+npx supabase functions deploy nota-sefaz
+```
+
+Sem o Supabase configurado, o app continua mostrando a nota dentro dele, só sem a conferência automática.

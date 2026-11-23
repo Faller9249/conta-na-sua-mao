@@ -10,7 +10,9 @@ import type {
   Produto,
   TipoCartao,
 } from '../domain/tipos'
+import { conferirComNota, type NotaLida } from '../domain/nota'
 import { NOME_LISTA_PADRAO, type BancoCasa } from './db'
+import { categoriaPorTexto } from './produtos'
 
 // ---------- Casa ----------
 
@@ -320,5 +322,68 @@ export async function lancarGasto(
     origem: 'manual',
     pessoaId: dados.pessoaId,
     cartaoId: dados.cartaoId,
+  })
+}
+
+// ---------- Conferência pela nota (Fase 2) ----------
+
+/** Guarda os itens lidos da nota na SEFAZ junto com a compra. */
+export async function salvarNotaLida(banco: BancoCasa, compraId: number, nota: NotaLida, agora = new Date()) {
+  await banco.compras.update(compraId, {
+    conferencia: { emitente: nota.emitente, cnpj: nota.cnpj, total: nota.total, pagamento: nota.pagamento, emissao: nota.emissao, itens: nota.itens, lidaEm: hojeISO(agora) },
+  })
+}
+
+/** "CNPJ:código do mercado" → produto, aprendido nas conferências anteriores. */
+export async function codigosAprendidos(banco: BancoCasa): Promise<Map<string, string>> {
+  const m = new Map<string, string>()
+  for (const p of await banco.produtos.toArray()) for (const c of p.codigosNota ?? []) m.set(c, p.id)
+  return m
+}
+
+/**
+ * Usa os valores da nota (fonte oficial): corrige preço e quantidade dos itens,
+ * grava os preços como "nota", inclui o que só estava na nota, tira (se pedido) o que
+ * não foi cobrado e acerta o gasto lançado no mês.
+ */
+export async function aplicarConferencia(
+  banco: BancoCasa,
+  compraId: number,
+  opcoes: { incluirSoNaNota?: boolean; tirarSoNoCarrinho?: boolean } = {},
+  agora = new Date(),
+) {
+  const { incluirSoNaNota = true, tirarSoNoCarrinho = false } = opcoes
+  return banco.transaction('rw', [banco.compras, banco.itensCompra, banco.precos, banco.lancamentos, banco.produtos], async () => {
+    const compra = await banco.compras.get(compraId)
+    const conf = compra?.conferencia
+    if (!compra || !conf) throw new Error('Leia a nota antes de conferir.')
+    const itens = await banco.itensCompra.where('compraId').equals(compraId).toArray()
+    const nota: NotaLida = { emitente: conf.emitente, cnpj: conf.cnpj, itens: conf.itens, total: conf.total }
+    const res = conferirComNota(itens, nota, await codigosAprendidos(banco))
+    const data = compra.fim ?? hojeISO(agora)
+    for (const l of res.linhas) {
+      if (l.item && l.nota) {
+        await banco.itensCompra.update(l.item.id!, { valorUnit: l.nota.valorUnit, quantidade: l.nota.quantidade, origemPreco: 'nota' })
+        await banco.precos.add({ produtoId: l.item.produtoId, mercadoId: compra.mercadoId, valor: l.nota.valorUnit, data, origem: 'nota' })
+        const chave = `${conf.cnpj}:${l.nota.codigo}`
+        const produto = await banco.produtos.get(l.item.produtoId)
+        if (produto && l.nota.codigo && !produto.codigosNota?.includes(chave)) {
+          await banco.produtos.update(produto.id, { codigosNota: [...(produto.codigosNota ?? []), chave] })
+        }
+      } else if (l.nota && incluirSoNaNota) {
+        const id = `loja:${conf.cnpj}:${l.nota.codigo || normalizarNome(l.nota.descricao)}`
+        if (!(await banco.produtos.get(id))) {
+          await banco.produtos.put({ id, nome: l.nota.descricao, categoria: categoriaPorTexto(l.nota.descricao), codigosNota: [`${conf.cnpj}:${l.nota.codigo}`] })
+        }
+        await banco.itensCompra.add({ compraId, produtoId: id, nome: l.nota.descricao, quantidade: l.nota.quantidade, valorUnit: l.nota.valorUnit, origemPreco: 'nota', naLista: false })
+        await banco.precos.add({ produtoId: id, mercadoId: compra.mercadoId, valor: l.nota.valorUnit, data, origem: 'nota' })
+      } else if (l.item && tirarSoNoCarrinho) {
+        await banco.itensCompra.delete(l.item.id!)
+      }
+    }
+    const total = totalCarrinho(await banco.itensCompra.where('compraId').equals(compraId).toArray())
+    await banco.lancamentos.filter((x) => x.compraId === compraId).modify({ valor: total })
+    await banco.compras.update(compraId, { conferencia: { ...conf, aplicadaEm: hojeISO(agora) } })
+    return total
   })
 }
