@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { db } from '../data/db'
 import { abrirLista, adicionarNaLista, apagarLista, compraAberta, criarLista, iniciarCompra, lerListaAtiva, listaAtiva, removerDaLista, renomearLista } from '../data/repo'
-import { brl, lerValor, precoSugerido } from '../domain/regras'
+import { brl, estimarListaPorMercado, hojeISO, lerValor, precoSugerido, sugerirParaLista, type SugestaoCompra } from '../domain/regras'
 import { CATEGORIAS_PRODUTO, type CategoriaProduto, type ItemLista } from '../domain/tipos'
 import { Check } from '../ui/componentes'
 
@@ -25,6 +25,8 @@ export function Lista() {
       mercados: await db.mercados.toArray(),
       aberta: await compraAberta(db),
       ultimoMercadoId: compras[0]?.mercadoId,
+      compras,
+      itensCompra: await db.itensCompra.toArray(),
     }
   })
   const [nome, setNome] = useState('')
@@ -37,7 +39,7 @@ export function Lista() {
   const [novaLista, setNovaLista] = useState<string | null>(null)
 
   if (!dados) return null
-  const { lista, listas, itens, precos, mercados, aberta, ultimoMercadoId } = dados
+  const { lista, listas, itens, precos, mercados, aberta, ultimoMercadoId, compras, itensCompra } = dados
   const mercadoPadrao = mercados.find((m) => m.id === ultimoMercadoId)?.nome ?? ''
   const sugestao = (i: ItemLista) => (i.produtoId && ultimoMercadoId ? precoSugerido(precos, i.produtoId, ultimoMercadoId) : null)
 
@@ -45,6 +47,15 @@ export function Lista() {
   const semPreco = itens.filter((i) => !sugestao(i)).length
   const grupos = CATEGORIAS_PRODUTO.map((c) => [c, itens.filter((i) => i.categoria === c)] as const).filter(([, l]) => l.length)
   const abertaEmOutra = aberta && aberta.listaId !== lista.id
+  const sugestoes = sugerirParaLista(compras, itensCompra, hojeISO(), itens)
+  const comparacao = estimarListaPorMercado(itens, precos)
+  const maiorCobertura = comparacao[0]?.comPreco ?? 0
+  const comProduto = itens.filter((i) => i.produtoId).length
+  const nomeMercado = (id: number) => mercados.find((m) => m.id === id)?.nome ?? 'Mercado'
+
+  async function sugerir(s: SugestaoCompra) {
+    await adicionarNaLista(db, lista.id!, s.nome, 'Outros', { produtoId: s.produtoId, marca: s.marca })
+  }
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault()
@@ -135,6 +146,44 @@ export function Lista() {
           </select>
         </div>
       </form>
+
+      {sugestoes.length > 0 && (
+        <section className="cartao" style={{ gap: 8 }}>
+          <div className="linha entre">
+            <h2>Deve estar acabando</h2>
+            {sugestoes.length > 1 && (
+              <button className="botao texto" style={{ padding: 0, fontSize: 14 }} onClick={async () => { for (const s of sugestoes) await sugerir(s) }}>
+                + Todos
+              </button>
+            )}
+          </div>
+          <p className="pequeno">Pelo histórico: vocês costumam comprar e já passou o tempo de costume.</p>
+          <div className="chips">
+            {sugestoes.map((s) => (
+              <button key={s.produtoId} className="chip" onClick={() => sugerir(s)} title={`Comprado ${s.vezes} vezes`}>
+                + {s.nome} <span style={{ fontWeight: 400 }}>· a cada {s.intervaloDias} {s.intervaloDias === 1 ? 'dia' : 'dias'}, último há {s.diasDesde}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {comparacao.length > 1 && (
+        <section className="cartao" style={{ gap: 6 }}>
+          <h2>Onde a lista sai mais barata</h2>
+          {comparacao.map((c, i) => (
+            <div key={c.mercadoId} className="linha entre">
+              <span style={{ fontSize: 14, fontWeight: i === 0 ? 600 : 400, color: i === 0 ? 'var(--verde)' : undefined }}>{nomeMercado(c.mercadoId)}</span>
+              <span className="pequeno">
+                {brl(c.total)} · {c.comPreco} de {comProduto} {comProduto === 1 ? 'item' : 'itens'}
+              </span>
+            </div>
+          ))}
+          <p className="pequeno">
+            Pelo último preço de cada item em cada mercado.{comparacao.some((c) => c.comPreco < maiorCobertura) ? ' Mercados com menos itens com preço ficam abaixo.' : ''}
+          </p>
+        </section>
+      )}
 
       {grupos.length === 0 && <p className="vazio">A lista está vazia.</p>}
       {grupos.map(([cat, l]) => (

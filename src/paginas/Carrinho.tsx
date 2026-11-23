@@ -8,12 +8,13 @@ import {
   cartoesAtivos,
   colocarNoCarrinho,
   compraAberta,
+  corrigirProduto,
   finalizarCompra,
   garantirProduto,
   pendentesDaCompra,
   tirarDoCarrinho,
 } from '../data/repo'
-import { brl, lerEtiquetaBalanca, lerValor, precoSugerido, totalCarrinho, totalExtras } from '../domain/regras'
+import { brl, codigoDoProduto, itemDaListaPara, lerEtiquetaBalanca, lerValor, maisBaratoEmOutro, nomesCombinam, precoSugerido, totalCarrinho, totalExtras } from '../domain/regras'
 import { CATEGORIAS_PRODUTO, type CategoriaProduto, type OrigemPreco, type Produto } from '../domain/tipos'
 import { Barra, Cabecalho, Check, corDoUso } from '../ui/componentes'
 import { LeitorCodigo } from '../ui/LeitorCodigo'
@@ -57,6 +58,9 @@ export function Carrinho() {
   const [finalizando, setFinalizando] = useState(false)
   const [cartaoId, setCartaoId] = useState<number | undefined>()
   const [aviso, setAviso] = useState('')
+  /** Item da lista escolhido à mão quando o nome do código não bate com a lista. */
+  const [vinculo, setVinculo] = useState<number | 'extra' | undefined>()
+  const [corrigindo, setCorrigindo] = useState<string | null>(null)
 
   if (!dados) return null
   if (!dados.compra) {
@@ -75,6 +79,19 @@ export function Carrinho() {
   const sug = lido?.produto ? precoSugerido(precos!, lido.produto.id, compra.mercadoId) : null
   const balanca = lido?.valorEtiqueta !== undefined
   const usarUltimo = !!sug && !sug.outroMercado && !balanca
+  const barato = lido?.produto && !balanca && sug && !sug.outroMercado ? maisBaratoEmOutro(precos!, lido.produto.id, compra.mercadoId) : null
+  const nomeMercado = (id: number) => mercados!.find((m) => m.id === id)?.nome ?? 'outro mercado'
+
+  // Conferência nome × código × lista.
+  const codigoLido = lido ? (lido.ean ?? (lido.produto ? codigoDoProduto(lido.produto.id) : lido.id ? codigoDoProduto(lido.id) : null)) : null
+  const alvo = lido?.produto ?? (lido?.id && nomeNovo.trim() ? { id: lido.id, nome: nomeNovo } : null)
+  const automatico = alvo ? itemDaListaPara(pendentes!, alvo) : undefined
+  const precisaEscolher = !!alvo && !automatico && pendentes!.length > 0
+  const parecidos = alvo ? pendentes!.filter((i) => nomesCombinam(i.nome, alvo.nome)) : []
+  const vinculoEfetivo = vinculo ?? (parecidos.length === 1 ? parecidos[0].id! : 'extra')
+  const escolhido = precisaEscolher && vinculoEfetivo !== 'extra' ? pendentes!.find((i) => i.id === vinculoEfetivo) : undefined
+  const nomeNaoBate = !!escolhido && !!lido?.produto && !nomesCombinam(escolhido.nome, lido.produto.nome)
+  const opcoesLista = [...parecidos, ...pendentes!.filter((i) => !parecidos.includes(i))]
 
   function mostrar(texto: string) {
     setAviso(texto)
@@ -83,6 +100,8 @@ export function Carrinho() {
 
   function preparar(produto: Produto | undefined, valorEtiqueta?: number) {
     setQtd(1)
+    setVinculo(undefined)
+    setCorrigindo(null)
     setMarca(produto?.marca ?? '')
     if (valorEtiqueta !== undefined) return setPreco((valorEtiqueta / 100).toFixed(2).replace('.', ','))
     const s = produto ? precoSugerido(precos!, produto.id, compra.mercadoId) : null
@@ -129,9 +148,17 @@ export function Carrinho() {
       produto = await garantirProduto(db, { id: produto.id, nome: produto.nome, categoria: produto.categoria, marca })
     }
     const origem: OrigemPreco = balanca ? 'balanca' : 'digitado'
-    await colocarNoCarrinho(db, compra.id!, produto, valor, qtd, origem)
+    await colocarNoCarrinho(db, compra.id!, produto, valor, qtd, origem, precisaEscolher ? vinculoEfetivo : undefined)
     mostrar(`${produto.nome} no carrinho`)
     setLido(null)
+  }
+
+  async function corrigirNome(nome: string) {
+    if (!lido?.produto || !nome.trim()) return
+    await corrigirProduto(db, lido.produto.id, { nome, marca: lido.produto.marca })
+    setLido({ ...lido, produto: { ...lido.produto, nome: nome.trim() } })
+    setCorrigindo(null)
+    mostrar('Nome corrigido para as próximas vezes')
   }
 
   async function finalizar() {
@@ -164,9 +191,17 @@ export function Carrinho() {
       {lido && (
         <section className="cartao destaque" style={{ gap: 8 }}>
           <p className="rotulo" style={{ color: 'var(--verde)' }}>Lido agora</p>
-          {lido.produto ? (
+          {lido.produto && corrigindo !== null ? (
+            <form className="linha" onSubmit={(e) => { e.preventDefault(); corrigirNome(corrigindo) }}>
+              <input className="entrada cresce" autoFocus value={corrigindo} onChange={(e) => setCorrigindo(e.target.value)} aria-label="Nome certo do produto" />
+              <button className="botao" style={{ width: 'auto', padding: '12px 14px' }} disabled={!corrigindo.trim()}>OK</button>
+            </form>
+          ) : lido.produto ? (
             <div>
-              <strong style={{ fontSize: 16 }}>{lido.produto.nome}</strong>
+              <div className="linha entre" style={{ alignItems: 'flex-start' }}>
+                <strong style={{ fontSize: 16 }}>{lido.produto.nome}</strong>
+                <button type="button" className="botao texto" style={{ padding: 0, fontSize: 13, flexShrink: 0 }} onClick={() => setCorrigindo(lido.produto!.nome)}>Corrigir nome</button>
+              </div>
               {(lido.produto.marca || lido.produto.quantidade) && (
                 <p className="pequeno">{[lido.produto.marca && `Marca: ${lido.produto.marca}`, lido.produto.quantidade].filter(Boolean).join(' · ')}</p>
               )}
@@ -180,12 +215,44 @@ export function Carrinho() {
               </select>
             </>
           )}
+          {codigoLido && <p className="pequeno codigo">Código {codigoLido}</p>}
+          {automatico && <p className="pequeno" style={{ color: 'var(--verde)' }}>✓ Da lista: {automatico.nome}{automatico.marca ? ` (${automatico.marca})` : ''}</p>}
+          {precisaEscolher && (
+            <div className="coluna" style={{ gap: 6 }}>
+              <p className="pequeno" style={{ color: 'var(--alerta)' }}>
+                Não achei “{alvo!.nome}” na lista. É algum destes?
+              </p>
+              <div className="chips">
+                {opcoesLista.map((i) => (
+                  <button type="button" key={i.id} className={`chip${vinculoEfetivo === i.id ? ' ativo' : ''}`} onClick={() => setVinculo(i.id)}>
+                    {i.nome}{i.marca ? ` · ${i.marca}` : ''}
+                  </button>
+                ))}
+                <button type="button" className={`chip${vinculoEfetivo === 'extra' ? ' ativo' : ''}`} onClick={() => setVinculo('extra')}>Extra (fora da lista)</button>
+              </div>
+            </div>
+          )}
+          {nomeNaoBate && (
+            <div className="cartao alerta" style={{ gap: 6, padding: 10 }}>
+              <p className="pequeno">
+                <strong>Confira a embalagem:</strong> o código {codigoLido} é de “{lido.produto!.nome}”, mas na lista está “{escolhido!.nome}”.
+              </p>
+              <button type="button" className="botao secundario" onClick={() => corrigirNome(escolhido!.nome)}>
+                O certo é “{escolhido!.nome}”: corrigir o nome
+              </button>
+            </div>
+          )}
           {!lido.produto?.marca && (
             <input className="entrada" value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Marca (opcional)" aria-label="Marca" />
           )}
           {sug && (
             <p className="pequeno">
               Último preço {sug.outroMercado ? `no ${mercados!.find((m) => m.id === sug.mercadoId)?.nome ?? 'outro mercado'}` : 'aqui'}: {brl(sug.valor)} em {dataCurta(sug.data)}
+            </p>
+          )}
+          {barato && (
+            <p className="pequeno" style={{ color: 'var(--verde)' }}>
+              No {nomeMercado(barato.mercadoId)} estava {brl(barato.valor)} em {dataCurta(barato.data)}
             </p>
           )}
           {balanca && <p className="pequeno">Valor lido da etiqueta: {brl(lido.valorEtiqueta!)}</p>}
@@ -246,6 +313,7 @@ export function Carrinho() {
                 {!i.naLista && ' · extra'}
                 {i.origemPreco === 'balanca' && ' · balança'}
               </div>
+              {codigoDoProduto(i.produtoId) && i.origemPreco !== 'balanca' && <div className="detalhe codigo">{codigoDoProduto(i.produtoId)}</div>}
             </div>
             <span className="preco">{brl(Math.round(i.valorUnit * i.quantidade))}</span>
             <button className="x" aria-label={`Tirar ${i.nome} do carrinho`} onClick={() => tirarDoCarrinho(db, i)}>×</button>

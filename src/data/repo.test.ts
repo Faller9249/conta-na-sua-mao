@@ -8,6 +8,7 @@ import {
   apagarLista,
   cancelarCompra,
   colocarNoCarrinho,
+  corrigirProduto,
   criarLista,
   finalizarCompra,
   garantirProduto,
@@ -139,5 +140,29 @@ describe('atualização do banco (v1 → v2)', () => {
     expect(listas.map((l) => l.nome)).toEqual(['Compras da semana'])
     expect((await v2.lista.toArray())[0].listaId).toBe(listas[0].id)
     expect((await v2.casa.get('casa'))?.listaAtivaId).toBe(listas[0].id)
+  })
+})
+
+describe('código × nome (Fase 2)', () => {
+  it('liga o código ao item da lista escolhido e corrige o nome em todo lugar', async () => {
+    const lista = await listaAtiva(banco)
+    await adicionarNaLista(banco, lista.id!, 'Feijão', 'Grãos e massas')
+    const compraId = await iniciarCompra(banco, 'Rissul', 0, lista.id)
+    const errado = await garantirProduto(banco, { ean: '7896006716112', nome: 'Arroz Tio João', categoria: 'Grãos e massas' })
+    const [feijao] = await banco.lista.toArray()
+    await colocarNoCarrinho(banco, compraId, errado, 899, 1, 'digitado', feijao.id)
+    expect((await banco.lista.get(feijao.id!))?.pego).toBe(1)
+    await corrigirProduto(banco, errado.id, { nome: 'Feijão carioca', marca: 'Camil' })
+    expect((await banco.produtos.get(errado.id))?.nome).toBe('Feijão carioca')
+    const [item] = await banco.itensCompra.toArray()
+    expect(item).toMatchObject({ nome: 'Feijão carioca', marca: 'Camil', naLista: true })
+  })
+  it('extra escolhido à mão não marca a lista', async () => {
+    const lista = await listaAtiva(banco)
+    await adicionarNaLista(banco, lista.id!, 'Leite', 'Laticínios')
+    const compraId = await iniciarCompra(banco, 'Rissul', 0, lista.id)
+    const leite = await garantirProduto(banco, { ean: '7891000000001', nome: 'Leite integral', categoria: 'Laticínios' })
+    await colocarNoCarrinho(banco, compraId, leite, 500, 1, 'digitado', 'extra')
+    expect((await banco.lista.toArray())[0].pego).toBe(0)
   })
 })

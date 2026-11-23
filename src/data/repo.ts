@@ -1,4 +1,4 @@
-import { hojeISO, mesDe, normalizarNome, totalCarrinho, type LeituraNota } from '../domain/regras'
+import { hojeISO, itemDaListaPara, mesDe, normalizarNome, totalCarrinho, type LeituraNota } from '../domain/regras'
 import type {
   Cartao,
   Casa,
@@ -115,12 +115,14 @@ export async function adicionarNaLista(
   listaId: number,
   nome: string,
   categoria: CategoriaProduto,
-  opcoes: { quantidade?: number; marca?: string } = {},
+  opcoes: { quantidade?: number; marca?: string; produtoId?: string } = {},
 ) {
   const n = nome.trim()
   if (!n) return
   const alvo = normalizarNome(n)
-  const produto = (await banco.produtos.toArray()).find((p) => normalizarNome(p.nome) === alvo)
+  const produto =
+    (opcoes.produtoId ? await banco.produtos.get(opcoes.produtoId) : undefined) ??
+    (await banco.produtos.toArray()).find((p) => normalizarNome(p.nome) === alvo)
   await banco.lista.add({
     listaId,
     nome: n,
@@ -188,7 +190,10 @@ export async function pendentesDaCompra(banco: BancoCasa, compraId: number) {
   return banco.lista.where('[listaId+pego]').equals([compra.listaId, 0]).toArray()
 }
 
-/** Põe um item no carrinho e marca o item correspondente da lista como pego. */
+/**
+ * Põe um item no carrinho e marca o item correspondente da lista como pego.
+ * `vinculo` deixa o casal escolher o item da lista (ou 'extra') quando o nome do código não bate.
+ */
 export async function colocarNoCarrinho(
   banco: BancoCasa,
   compraId: number,
@@ -196,13 +201,12 @@ export async function colocarNoCarrinho(
   valorUnit: number,
   quantidade = 1,
   origemPreco: OrigemPreco = 'digitado',
+  vinculo?: number | 'extra',
 ) {
   return banco.transaction('rw', banco.compras, banco.lista, banco.itensCompra, async () => {
     const pendentes = await pendentesDaCompra(banco, compraId)
-    const alvo = normalizarNome(produto.nome)
     const daLista =
-      pendentes.find((i) => i.produtoId === produto.id) ??
-      pendentes.find((i) => normalizarNome(i.nome) === alvo || alvo.startsWith(normalizarNome(i.nome)))
+      vinculo === 'extra' ? undefined : vinculo !== undefined ? pendentes.find((i) => i.id === vinculo) : itemDaListaPara(pendentes, produto)
     if (daLista) await banco.lista.update(daLista.id!, { pego: 1, produtoId: produto.id })
     return banco.itensCompra.add({
       compraId,
@@ -215,6 +219,21 @@ export async function colocarNoCarrinho(
       naLista: !!daLista,
       itemListaId: daLista?.id,
     })
+  })
+}
+
+/**
+ * Corrige nome/marca de um produto do catálogo (ex.: o código é de "Arroz", mas foi salvo como "Feijão").
+ * Atualiza também as compras e listas que usam esse código.
+ */
+export async function corrigirProduto(banco: BancoCasa, produtoId: string, dados: { nome: string; marca?: string }) {
+  const nome = dados.nome.trim()
+  if (!nome) return
+  const marca = dados.marca?.trim() || undefined
+  await banco.transaction('rw', banco.produtos, banco.itensCompra, banco.lista, async () => {
+    await banco.produtos.update(produtoId, { nome, marca })
+    await banco.itensCompra.where('produtoId').equals(produtoId).modify({ nome, marca })
+    await banco.lista.where('produtoId').equals(produtoId).modify({ nome, marca })
   })
 }
 

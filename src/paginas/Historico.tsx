@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { db } from '../data/db'
-import { brl, dataBR, normalizarNome, totalCarrinho } from '../domain/regras'
+import { corrigirProduto } from '../data/repo'
+import { brl, codigoDoProduto, dataBR, normalizarNome, totalCarrinho, ultimoPrecoPorMercado } from '../domain/regras'
 import type { ItemCompra } from '../domain/tipos'
 import { Cabecalho } from '../ui/componentes'
 
@@ -10,6 +11,7 @@ export function Historico() {
   const navegar = useNavigate()
   const [aba, setAba] = useState<'compras' | 'produtos'>('compras')
   const [busca, setBusca] = useState('')
+  const [editando, setEditando] = useState<{ id: string; nome: string; marca: string } | null>(null)
   const dados = useLiveQuery(async () => {
     const compras = (await db.compras.where('status').equals('finalizada').toArray()).sort((a, b) => (b.fim ?? '').localeCompare(a.fim ?? '') || b.id! - a.id!)
     return {
@@ -17,10 +19,11 @@ export function Historico() {
       itens: await db.itensCompra.toArray(),
       mercados: await db.mercados.toArray(),
       cartoes: await db.cartoes.toArray(),
+      precos: await db.precos.toArray(),
     }
   })
   if (!dados) return null
-  const { compras, itens, mercados, cartoes } = dados
+  const { compras, itens, mercados, cartoes, precos } = dados
   const nomeMercado = (id: number) => mercados.find((m) => m.id === id)?.nome ?? 'Mercado'
   const porCompra = new Map<number, ItemCompra[]>()
   for (const i of itens) porCompra.set(i.compraId, [...(porCompra.get(i.compraId) ?? []), i])
@@ -40,7 +43,7 @@ export function Historico() {
   const termo = normalizarNome(busca)
   const listaProdutos = [...produtos.entries()]
     .map(([id, p]) => ({ id, ...p, vezes: p.vezes.sort((a, b) => b.data.localeCompare(a.data)) }))
-    .filter((p) => !termo || normalizarNome(`${p.nome} ${p.marca ?? ''}`).includes(termo))
+    .filter((p) => !termo || normalizarNome(`${p.nome} ${p.marca ?? ''} ${p.id}`).includes(termo))
     .sort((a, b) => a.nome.localeCompare(b.nome))
 
   return (
@@ -74,17 +77,36 @@ export function Historico() {
         </section>
       ) : (
         <section className="coluna">
-          <input className="entrada" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto ou marca" aria-label="Buscar produto" />
+          <input className="entrada" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, marca ou código" aria-label="Buscar produto" />
           {listaProdutos.length === 0 && <p className="vazio">{busca ? 'Nada encontrado.' : 'Os produtos comprados aparecem aqui.'}</p>}
           {listaProdutos.map((p) => {
             const [ultima, anterior] = p.vezes
             const variou = anterior ? ultima.valor - anterior.valor : 0
+            const codigo = codigoDoProduto(p.id)
+            const porMercado = [...ultimoPrecoPorMercado(precos, p.id).values()].sort((a, b) => a.valor - b.valor)
+            if (editando?.id === p.id) {
+              return (
+                <form key={p.id} className="cartao destaque" style={{ gap: 8 }} onSubmit={async (e) => { e.preventDefault(); await corrigirProduto(db, p.id, editando); setEditando(null) }}>
+                  <p className="pequeno">Corrigir o produto{codigo ? ` do código ${codigo}` : ''}. Vale para as compras antigas e as próximas.</p>
+                  <input className="entrada" autoFocus value={editando.nome} onChange={(e) => setEditando({ ...editando, nome: e.target.value })} aria-label="Nome do produto" />
+                  <input className="entrada" value={editando.marca} onChange={(e) => setEditando({ ...editando, marca: e.target.value })} placeholder="Marca (opcional)" aria-label="Marca" />
+                  <div className="linha">
+                    <button type="button" className="botao secundario" onClick={() => setEditando(null)}>Cancelar</button>
+                    <button className="botao" disabled={!editando.nome.trim()}>Salvar</button>
+                  </div>
+                </form>
+              )
+            }
             return (
               <div key={p.id} className="cartao" style={{ gap: 6 }}>
                 <div className="linha entre">
                   <div className="cresce">
                     <strong style={{ fontSize: 15 }}>{p.nome}</strong>
                     {p.marca && <p className="pequeno">{p.marca}</p>}
+                    <p className="pequeno codigo">
+                      {codigo ? `Código ${codigo}` : 'Sem código (entrou pelo nome)'} ·{' '}
+                      <button type="button" className="botao texto" style={{ padding: 0, fontSize: 12, fontFamily: 'inherit' }} onClick={() => setEditando({ id: p.id, nome: p.nome, marca: p.marca ?? '' })}>corrigir</button>
+                    </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <strong>{brl(ultima.valor)}</strong>
@@ -95,6 +117,17 @@ export function Historico() {
                     )}
                   </div>
                 </div>
+                {porMercado.length > 1 && (
+                  <div className="cartao" style={{ gap: 4, padding: 8, background: 'var(--fundo)' }}>
+                    <p className="rotulo">Por mercado (último preço)</p>
+                    {porMercado.map((pr, i) => (
+                      <div key={pr.mercadoId} className="linha entre pequeno">
+                        <span style={{ color: i === 0 ? 'var(--verde)' : undefined, fontWeight: i === 0 ? 600 : undefined }}>{nomeMercado(pr.mercadoId)}{i === 0 ? ' · mais barato' : ''}</span>
+                        <span>{brl(pr.valor)} · {dataBR(pr.data).slice(0, 5)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {p.vezes.slice(0, 5).map((v, i) => (
                   <div key={i} className="linha entre pequeno">
                     <span>{dataBR(v.data)} · {v.mercado}{v.qtd > 1 ? ` · ${v.qtd} un` : ''}</span>

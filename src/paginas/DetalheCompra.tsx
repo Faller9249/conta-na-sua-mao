@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { db } from '../data/db'
 import { trocarCartaoDaCompra, vincularNota } from '../data/repo'
-import { brl, dataBR, formatarCNPJ, lerNotaFiscal, totalCarrinho } from '../domain/regras'
+import { brl, codigoDoProduto, dataBR, formatarCNPJ, lerNotaFiscal, totalCarrinho } from '../domain/regras'
 import { Cabecalho } from '../ui/componentes'
 import { LeitorCodigo } from '../ui/LeitorCodigo'
 
@@ -124,6 +124,7 @@ export function DetalheCompra() {
                 {i.quantidade} × {brl(i.valorUnit)}
                 {!i.naLista && ' · extra'}
               </div>
+              {codigoDoProduto(i.produtoId) && <div className="detalhe codigo">{codigoDoProduto(i.produtoId)}</div>}
             </div>
             <span className="preco">{brl(Math.round(i.valorUnit * i.quantidade))}</span>
           </div>

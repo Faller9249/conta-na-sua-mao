@@ -275,3 +275,144 @@ export function gastoPorCartao(lancamentos: Lancamento[], mes: string): Map<numb
   }
   return m
 }
+
+// ---------- Código do produto (Fase 2) ----------
+
+/** Código para mostrar ao casal: o EAN, "balança 1234" ou null (item entrou pelo nome). */
+export function codigoDoProduto(produtoId: string): string | null {
+  if (produtoId.startsWith('nome:')) return null
+  if (produtoId.startsWith('balanca:')) return `balança ${produtoId.split(':')[2] ?? ''}`.trim()
+  return produtoId
+}
+
+const PALAVRAS_VAZIAS = new Set(['com', 'sem', 'tipo', 'para', 'pct', 'und', 'unid'])
+
+function palavras(nome: string): string[] {
+  return normalizarNome(nome)
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length >= 3 && !PALAVRAS_VAZIAS.has(p) && !/^\d/.test(p))
+}
+
+/**
+ * Os dois nomes parecem do mesmo produto? Basta dividirem uma palavra que importa
+ * ("Arroz" e "Arroz branco Tio João" sim; "Feijão" e "Arroz Tio João" não).
+ */
+export function nomesCombinam(a: string, b: string): boolean {
+  const pa = palavras(a)
+  const pb = palavras(b)
+  if (pa.length === 0 || pb.length === 0) return normalizarNome(a) === normalizarNome(b)
+  return pa.some((p) => pb.some((q) => p === q || p.startsWith(q) || q.startsWith(p)))
+}
+
+/** Item da lista que o produto lido atende: pelo código já ligado ou pelo começo do nome. */
+export function itemDaListaPara<T extends { produtoId?: string; nome: string }>(pendentes: T[], produto: { id: string; nome: string }): T | undefined {
+  const alvo = normalizarNome(produto.nome)
+  return (
+    pendentes.find((i) => i.produtoId === produto.id) ??
+    pendentes.find((i) => normalizarNome(i.nome) === alvo || alvo.startsWith(normalizarNome(i.nome)))
+  )
+}
+
+// ---------- Comparação entre mercados (Fase 2) ----------
+
+/** Último preço do produto em cada mercado. */
+export function ultimoPrecoPorMercado(precos: Preco[], produtoId: string): Map<number, Preco> {
+  const m = new Map<number, Preco>()
+  for (const p of precos) {
+    if (p.produtoId !== produtoId) continue
+    const atual = m.get(p.mercadoId)
+    m.set(p.mercadoId, atual ? maisRecente(atual, p) : p)
+  }
+  return m
+}
+
+/** Mercado onde o produto estava mais barato, se for outro e mais barato que o mercado atual. */
+export function maisBaratoEmOutro(precos: Preco[], produtoId: string, mercadoId: number): Preco | null {
+  const porMercado = ultimoPrecoPorMercado(precos, produtoId)
+  const aqui = porMercado.get(mercadoId)
+  let melhor: Preco | null = null
+  for (const [id, p] of porMercado) if (id !== mercadoId && (!melhor || p.valor < melhor.valor)) melhor = p
+  if (!melhor || (aqui && melhor.valor >= aqui.valor)) return null
+  return melhor
+}
+
+export interface EstimativaMercado {
+  mercadoId: number
+  total: number
+  /** Quantos itens da lista têm preço neste mercado. */
+  comPreco: number
+}
+
+/**
+ * Quanto a lista sairia em cada mercado, pelo último preço de cada item lá.
+ * Ordena por quem tem mais itens com preço e, empatando, pelo menor total.
+ */
+export function estimarListaPorMercado(itens: { produtoId?: string; quantidade: number }[], precos: Preco[]): EstimativaMercado[] {
+  const res = new Map<number, EstimativaMercado>()
+  for (const i of itens) {
+    if (!i.produtoId) continue
+    for (const [mercadoId, p] of ultimoPrecoPorMercado(precos, i.produtoId)) {
+      const e = res.get(mercadoId) ?? { mercadoId, total: 0, comPreco: 0 }
+      e.total += p.valor * i.quantidade
+      e.comPreco += 1
+      res.set(mercadoId, e)
+    }
+  }
+  return [...res.values()].sort((a, b) => b.comPreco - a.comPreco || a.total - b.total)
+}
+
+// ---------- Lista automática (Fase 2) ----------
+
+function diasEntre(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000)
+}
+
+export interface SugestaoCompra {
+  produtoId: string
+  nome: string
+  marca?: string
+  /** Em quantas compras diferentes o produto apareceu. */
+  vezes: number
+  /** De quantos em quantos dias costumam comprar. */
+  intervaloDias: number
+  /** Dias desde a última compra. */
+  diasDesde: number
+}
+
+/**
+ * Produtos que costumam comprar e que já devem estar acabando: comprados em pelo menos
+ * 2 compras e com o tempo desde a última compra perto do intervalo de costume.
+ */
+export function sugerirParaLista(
+  compras: { id?: number; fim?: string; inicio: string; status: string }[],
+  itens: ItemCompra[],
+  hoje: string,
+  jaNaLista: { produtoId?: string; nome: string }[],
+  limite = 8,
+): SugestaoCompra[] {
+  const dataDe = new Map(compras.filter((c) => c.status === 'finalizada').map((c) => [c.id!, c.fim ?? c.inicio]))
+  const porProduto = new Map<string, { nome: string; marca?: string; datas: Set<string> }>()
+  for (const i of itens) {
+    const data = dataDe.get(i.compraId)
+    if (!data) continue
+    const p = porProduto.get(i.produtoId) ?? { nome: i.nome, marca: i.marca, datas: new Set<string>() }
+    p.datas.add(data)
+    porProduto.set(i.produtoId, p)
+  }
+  const ids = new Set(jaNaLista.map((i) => i.produtoId).filter(Boolean))
+  const sugestoes: (SugestaoCompra & { urgencia: number })[] = []
+  for (const [produtoId, p] of porProduto) {
+    if (ids.has(produtoId) || jaNaLista.some((i) => nomesCombinam(i.nome, p.nome))) continue
+    const datas = [...p.datas].sort()
+    if (datas.length < 2) continue
+    const intervaloDias = Math.max(1, Math.round(diasEntre(datas[0], datas[datas.length - 1]) / (datas.length - 1)))
+    const diasDesde = diasEntre(datas[datas.length - 1], hoje)
+    const urgencia = diasDesde / intervaloDias
+    if (urgencia < 0.8) continue
+    sugestoes.push({ produtoId, nome: p.nome, marca: p.marca, vezes: datas.length, intervaloDias, diasDesde, urgencia })
+  }
+  return sugestoes
+    .sort((a, b) => b.urgencia - a.urgencia || b.vezes - a.vezes)
+    .slice(0, limite)
+    .map(({ urgencia, ...s }) => (void urgencia, s))
+}
