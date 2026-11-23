@@ -58,11 +58,14 @@ export function TabBar() {
   )
 }
 
-export function Cabecalho({ titulo, sub }: { titulo: string; sub?: ReactNode }) {
+export function Cabecalho({ titulo, sub, acao }: { titulo: string; sub?: ReactNode; acao?: ReactNode }) {
   return (
-    <header>
-      <h1>{titulo}</h1>
-      {sub && <p className="sub">{sub}</p>}
+    <header className={acao ? 'com-acao' : undefined}>
+      <div>
+        <h1>{titulo}</h1>
+        {sub && <p className="sub">{sub}</p>}
+      </div>
+      {acao}
     </header>
   )
 }

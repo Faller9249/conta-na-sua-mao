@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { loginAtivo, mensagemDeErro } from './supabase'
 
 describe('login', () => {
-  it('sem as chaves do Supabase, o app roda sem login', () => {
-    expect(loginAtivo).toBe(false)
+  it('o login só liga quando as chaves do Supabase existem', () => {
+    expect(loginAtivo).toBe(!!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY))
   })
   it('traduz os erros mais comuns', () => {
     expect(mensagemDeErro({ code: 'invalid_credentials', message: 'Invalid login credentials' })).toBe('E-mail ou senha incorretos.')

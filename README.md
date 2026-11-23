@@ -58,6 +58,16 @@ VITE_SUPABASE_ANON_KEY=...
 
 A chave anon/publishable é pública por natureza. Nunca coloque no app a chave **service_role / secret**.
 
+## Casa compartilhada e sincronização
+
+Com login, cada celular se liga a uma **casa** na nuvem. Quem cria a casa convida a outra pessoa pelo **Perfil** (código de 6 letras, vale 7 dias). Os dados de cada celular ficam no aparelho (funciona offline) e sincronizam com a tabela `registros` do Supabase, também em tempo real.
+
+- **Limite de pessoas por casa:** `casas.max_membros` (plano grátis = 2). O limite é conferido no banco (função `criar_convite` e gatilho em `membros`), então não dá para burlar pelo app. Para um plano com mais pessoas, só o servidor muda: `update casas set max_membros = 5, plano = 'familia' where id = ...`.
+- **Quem vê o quê:** Row Level Security; cada conta só enxerga a própria casa.
+- **Ids:** gerados no aparelho e únicos entre celulares (`novoId` em `src/data/db.ts`). Ao entrar numa casa com dados no celular, `mesclarComCasa` junta tudo sem repetir pessoas, cartões, mercados e listas de mesmo nome.
+
+**Instalar o banco (uma vez):** Supabase → **SQL Editor** → New query → colar `supabase/migrations/20261123000000_casa_e_sincronizacao.sql` → **Run**.
+
 ## Conferência pela nota fiscal (NFC-e)
 
 O QR Code do cupom traz o link da consulta na SEFAZ (no RS, `dfe-portal.svrs.rs.gov.br`). O app:

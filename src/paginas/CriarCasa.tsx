@@ -11,7 +11,8 @@ interface PessoaForm {
   dias: string
 }
 
-export function CriarCasa() {
+/** `aoCriar` roda depois de criar a casa no celular (ex.: criar também na nuvem). */
+export function CriarCasa({ aoCriar, rodape }: { aoCriar?: (nomeCasa: string) => Promise<void>; rodape?: React.ReactNode } = {}) {
   const navegar = useNavigate()
   const [nome, setNome] = useState('')
   const [pessoas, setPessoas] = useState<PessoaForm[]>([
@@ -37,8 +38,14 @@ export function CriarCasa() {
         .map(Number)
         .filter((d) => d >= 1 && d <= 31),
     }))
-    await criarCasa(db, { nome, reservaPct: pct, limiteMercado: lerValor(limite) ?? undefined, pessoas: convertidas })
-    navegar('/', { replace: true })
+    setErro('')
+    try {
+      await criarCasa(db, { nome, reservaPct: pct, limiteMercado: lerValor(limite) ?? undefined, pessoas: convertidas })
+      await aoCriar?.(nome.trim() || 'Minha casa')
+      navegar('/', { replace: true })
+    } catch (falha) {
+      setErro((falha as Error).message)
+    }
   }
 
   return (
@@ -97,7 +104,7 @@ export function CriarCasa() {
 
       {erro && <p className="pequeno" style={{ color: 'var(--erro)' }}>{erro}</p>}
       <button className="botao" type="submit">Criar a casa</button>
-      <p className="pequeno" style={{ textAlign: 'center' }}>Os dados ficam só neste celular por enquanto.</p>
+      {rodape ?? <p className="pequeno" style={{ textAlign: 'center' }}>Os dados ficam só neste celular.</p>}
     </form>
   )
 }

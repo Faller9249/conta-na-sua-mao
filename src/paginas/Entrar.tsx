@@ -14,6 +14,7 @@ export function Entrar() {
   const [modo, setModo] = useState<Modo>('entrar')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [nome, setNome] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [aviso, setAviso] = useState('')
@@ -38,7 +39,7 @@ export function Entrar() {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password: senha,
-          options: { emailRedirectTo: enderecoDoSite() },
+          options: { emailRedirectTo: enderecoDoSite(), data: { nome: nome.trim() } },
         })
         if (error) setErro(mensagemDeErro(error))
         else if (!data.session) setAviso('Conta criada. Abra o e-mail que enviamos e toque no link para confirmar.')
@@ -63,6 +64,12 @@ export function Entrar() {
       </div>
       <Cabecalho titulo={t.titulo} sub={t.sub} />
 
+      {modo === 'criar' && (
+        <label className="campo">
+          Seu nome
+          <input autoComplete="given-name" required value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Como a casa te chama" />
+        </label>
+      )}
       <label className="campo">
         E-mail
         <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@exemplo.com" />

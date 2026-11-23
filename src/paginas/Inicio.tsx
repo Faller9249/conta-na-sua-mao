@@ -1,12 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
+import { nomeDoUsuario } from '../data/nuvem'
+import { useSessao } from '../data/supabase'
 import { brl, diasAteProximaEntrada, gastoPorCartao, hojeISO, mesDe, metaReserva, resumoDoMes, separadoNoMes } from '../domain/regras'
 import { Barra, Cabecalho, corDoUso } from '../ui/componentes'
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
 export function Inicio() {
+  const login = useSessao()
+  const usuario = !login.carregando ? login.sessao?.user : undefined
   const dados = useLiveQuery(async () => ({
     casa: await db.casa.get('casa'),
     pessoas: await db.pessoas.toArray(),
@@ -32,6 +36,11 @@ export function Inicio() {
     <div className="conteudo">
       <Cabecalho
         titulo={nomes ? `Olá, ${nomes}` : casa.nome}
+        acao={
+          <Link to="/perfil" className="avatar" aria-label="Perfil e conta">
+            {(nomeDoUsuario(usuario)[0] ?? '☰').toUpperCase()}
+          </Link>
+        }
         sub={`${MESES[hoje.getMonth()][0].toUpperCase()}${MESES[hoje.getMonth()].slice(1)} de ${hoje.getFullYear()}${dias !== null ? ` · ${dias === 0 ? 'dia de salário' : `faltam ${dias} dias para o salário`}` : ''}`}
       />
 

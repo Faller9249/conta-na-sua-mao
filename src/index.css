@@ -82,3 +82,6 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tab-altura) + 16px); background: var(--texto); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: 90%; }
 .vazio { text-align: center; color: var(--texto-2); padding: 24px 8px; font-size: 14px; }
 .nota-sefaz { width: 100%; height: 70vh; border: 1px solid #dfe5df; border-radius: 12px; background: #fff; }
+header.com-acao { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.avatar { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--verde-claro); color: var(--verde); display: grid; place-items: center; font-weight: 700; font-size: 17px; text-decoration: none; border: 1.5px solid var(--verde); }
+.avatar.grande { width: 56px; height: 56px; font-size: 24px; }

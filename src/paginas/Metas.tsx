@@ -1,8 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { definirReservaPct, separarReserva } from '../data/repo'
-import { loginAtivo, sair, useSessao } from '../data/supabase'
 import { brl, hojeISO, lerValor, mesDe, metaReserva, separadoNoMes } from '../domain/regras'
 import { Barra, Cabecalho } from '../ui/componentes'
 
@@ -79,24 +79,8 @@ export function Metas() {
         })}
       </section>
       <p className="pequeno" style={{ textAlign: 'center' }}>A transferência é feita no app do seu banco. O app só calcula e lembra.</p>
-      <Conta />
+      <Link to="/perfil" className="botao texto" style={{ textAlign: 'center', textDecoration: 'none', alignSelf: 'center' }}>Perfil, senha e pessoas da casa</Link>
     </div>
-  )
-}
-
-function Conta() {
-  const login = useSessao()
-  if (!loginAtivo || login.carregando || !login.sessao) return null
-  return (
-    <section className="cartao">
-      <div className="linha entre">
-        <div className="cresce">
-          <p className="pequeno">Conectado como</p>
-          <strong style={{ fontSize: 14, overflowWrap: 'anywhere' }}>{login.sessao.user.email}</strong>
-        </div>
-        <button className="botao secundario" style={{ width: 'auto', padding: '10px 16px' }} onClick={() => sair()}>Sair</button>
-      </div>
-    </section>
   )
 }
 
